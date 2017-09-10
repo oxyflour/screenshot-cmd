@@ -67,6 +67,7 @@
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
 #pragma comment(lib, "gdiplus.lib")
+#pragma comment(lib, "Dwmapi.lib")
 
 using namespace Gdiplus;
 
@@ -100,6 +101,37 @@ int GetEncoderClsid(const WCHAR* format, CLSID* pClsid)
 
   free(pImageCodecInfo);
   return -1;  // Failure
+}
+
+struct FIND_WINDOW_WITH_PID_AND_CLASS {
+	HWND hWndFound;
+	DWORD pid;
+	wchar_t szClass[1024];
+};
+
+BOOL CALLBACK EnumWindowsProcMy(HWND hWnd, LPARAM lParam)
+{
+	auto ps = (FIND_WINDOW_WITH_PID_AND_CLASS *)lParam;
+	DWORD dwProcessId;
+	GetWindowThreadProcessId(hWnd, &dwProcessId);
+	wchar_t szClass[1024];
+	GetClassName(hWnd, szClass, sizeof(szClass));
+	if (dwProcessId == ps->pid && IsWindowVisible(hWnd) &&
+		(!ps->szClass[0] || wcscmp(szClass, ps->szClass) == 0))
+	{
+		ps->hWndFound = hWnd;
+		return FALSE;
+	}
+	return TRUE;
+}
+
+HWND GetWindowFromProcessId(DWORD pid, const wchar_t *szClass) {
+	FIND_WINDOW_WITH_PID_AND_CLASS fs;
+	fs.hWndFound = NULL;
+	fs.pid = pid;
+	wcscpy(fs.szClass, szClass);
+	EnumWindows(EnumWindowsProcMy, (LPARAM)&fs);
+	return fs.hWndFound;
 }
 
 int wmain(int argc, wchar_t** argv)
@@ -141,7 +173,21 @@ int wmain(int argc, wchar_t** argv)
 				Sleep(200); //TODO: Arbitrary waiting time for window to become topmost
 				if(!rectProvided) DwmGetWindowAttribute(windowSearched, DWMWA_EXTENDED_FRAME_BOUNDS, &rect, sizeof(rect));
 			}
-		}else  if( wcscmp( argv[i], L"-wh" )==0 && i+1<argc ){
+		}else if( wcscmp( argv[i], L"-pid" )==0 && i+1<argc ){
+			wchar_t *szClass = L"";
+			for (short j = 1; j < argc; j++) {
+				if (wcscmp(argv[j], L"-cls") == 0 && j + 1 < argc) {
+					szClass = argv[j + 1];
+				}
+			}
+			DWORD dwProcessId = _wtoi(argv[i + 1]);
+			windowSearched = GetWindowFromProcessId(dwProcessId, szClass);
+			if(windowSearched){
+				SetWindowPos( windowSearched, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW ); 
+				Sleep(200); //TODO: Arbitrary waiting time for window to become topmost
+				if(!rectProvided) DwmGetWindowAttribute(windowSearched, DWMWA_EXTENDED_FRAME_BOUNDS, &rect, sizeof(rect));
+			}
+		}else if( wcscmp( argv[i], L"-wh" )==0 && i+1<argc ){
 			windowSearched = (HWND)wcstoul( argv[i+1],NULL,16); //TODO: How does it work on 64bit enviroment?
 			if(windowSearched){
 				SetWindowPos( windowSearched, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW ); 
